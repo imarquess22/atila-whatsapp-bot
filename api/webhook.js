@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { verifySignature, readRawBody } = require('../lib/verifySignature');
 const { parseIncoming, sendText } = require('../lib/meta');
 const { handleIncoming } = require('../lib/flow');
@@ -37,6 +38,22 @@ module.exports = async function handler(req, res) {
   }
 
   const assinatura = req.headers['x-hub-signature-256'];
+
+  // TEMPORÁRIO — log de diagnóstico (sem expor o App Secret) para descobrir por que a
+  // assinatura está sendo recusada. Remover depois de resolvido.
+  const secretConfigurado = !!process.env.META_APP_SECRET;
+  const hashCalculado = secretConfigurado
+    ? 'sha256=' + crypto.createHmac('sha256', process.env.META_APP_SECRET).update(rawBody).digest('hex')
+    : '(META_APP_SECRET não configurado)';
+  console.log('[debug webhook]', JSON.stringify({
+    contentLength: req.headers['content-length'],
+    rawBodyBytes: rawBody.length,
+    rawBodyPreview: rawBody.toString('utf8').slice(0, 120),
+    assinaturaRecebida: assinatura || '(nenhuma)',
+    assinaturaCalculada: hashCalculado,
+    secretConfigurado,
+  }));
+
   if (!verifySignature(rawBody, assinatura)) {
     console.error('Assinatura inválida no webhook do WhatsApp — requisição rejeitada.');
     res.status(401).end();
