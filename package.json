@@ -1,0 +1,9 @@
+{
+  "name": "atila-whatsapp-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bot de WhatsApp (Meta Cloud API) para agendar, ver, remarcar e cancelar atendimentos da Átila Gomes Academy, usando o mesmo Supabase do app principal.",
+  "engines": {
+    "node": ">=18"
+  }
+}
