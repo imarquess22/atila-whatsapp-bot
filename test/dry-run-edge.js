@@ -51,7 +51,11 @@ function fakeFetch(url, options = {}) {
 
 globalThis.fetch = fakeFetch;
 
-const { handleIncoming } = require('../lib/flow');
+const { handleIncoming: handleIncomingRaw } = require('../lib/flow');
+async function handleIncoming(msg) {
+  const resposta = await handleIncomingRaw(msg);
+  return resposta === null ? null : resposta.texto;
+}
 const agenda = require('../lib/agendamentos');
 
 let falhas = 0;

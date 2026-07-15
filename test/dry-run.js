@@ -71,8 +71,9 @@ function checar(condicao, mensagem) {
 
 async function enviar(from, msgId, text) {
   const resposta = await handleIncoming({ from, msgId, text });
-  console.log(`\n>>> [${from}] "${text}"\n<<< ${resposta === null ? '(bot em silêncio)' : resposta.replace(/\n/g, '\n    ')}`);
-  return resposta;
+  const texto = resposta === null ? null : resposta.texto;
+  console.log(`\n>>> [${from}] "${text}"\n<<< ${texto === null ? '(bot em silêncio)' : texto.replace(/\n/g, '\n    ')}`);
+  return texto;
 }
 
 (async () => {
