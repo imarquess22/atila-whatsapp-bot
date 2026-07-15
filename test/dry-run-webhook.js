@@ -206,11 +206,11 @@ async function enviar(bodyStr) {
   checar(ultima.body.interactive.action.buttons.length === 2, 'tem 2 botões (confirmar/cancelar)');
   checar(ultima.body.interactive.body.text.includes('Manicure Completa'), 'confirmação mostra o nome do procedimento');
 
-  // 8) Clica em confirmar (botão id "1") -> agendamento criado + menu (LIST)
+  // 8) Clica em confirmar (botão id "1") -> agendamento criado (texto simples, sem repetir o menu)
   res = await enviar(payloadInterativo(phone, 'm8', 'button', '1', '✅ Confirmar'));
   ultima = graphCalls[graphCalls.length - 1];
-  checar(ultima.body.interactive?.type === 'list', 'depois de confirmar, volta o menu principal clicável');
-  checar(ultima.body.interactive.body.text.includes('agendado'), 'mensagem de "agendamento confirmado" aparece de verdade no corpo (não só no fallback)');
+  checar(ultima.body.type === 'text' && ultima.body.text.body.includes('agendado'), 'confirmação de agendamento chega como texto simples');
+  checar(!ultima.body.text.body.includes('Como posso ajudar'), 'confirmação de agendamento não repete o menu principal');
   checar(db.agendamentos.length === 1, 'agendamento foi realmente criado no banco');
   checar(db.agendamentos[0].dados.duracao === 45, 'agendamento criado com a duração do procedimento (45min)');
 

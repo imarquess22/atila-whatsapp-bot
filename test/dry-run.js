@@ -107,6 +107,7 @@ async function enviar(from, msgId, text) {
 
   r = await enviar(phone, 'm8', '1'); // confirma
   checar(r.texto.includes('agendado') && db.agendamentos.length === 1, 'agendamento foi criado no banco');
+  checar(!r.texto.includes('Como posso ajudar'), 'confirmação de agendamento não repete o menu principal');
   checar(db.agendamentos[0].dados.duracao === 45, 'agendamento usa a duração do procedimento (45min), não o padrão');
   checar(db.audit_log.some(a => a.dados.tipo === 'criar' && a.dados.entidade === 'agendamento'), 'audit_log registrou a criação');
   const dataAgendada = db.agendamentos[0].dados.data;
@@ -131,6 +132,7 @@ async function enviar(from, msgId, text) {
   const agAtual = db.agendamentos[0].dados;
   checar(agAtual.data !== dataAgendada, 'agendamento foi remarcado para uma data diferente');
   checar(agAtual.status === 'agendado', 'status volta para agendado após remarcar');
+  checar(!r.texto.includes('Como posso ajudar'), 'confirmação de remarcação não repete o menu principal');
 
   r = await enviar(phone, 'm16', '4');
   checar(r.texto.includes('cancelar') || r.texto.includes('Qual agendamento'), 'menu de cancelar lista o agendamento');
@@ -140,6 +142,7 @@ async function enviar(from, msgId, text) {
 
   r = await enviar(phone, 'm18', '1');
   checar(r.texto.includes('cancelado'), 'confirma cancelamento');
+  checar(!r.texto.includes('Como posso ajudar'), 'confirmação de cancelamento não repete o menu principal');
   checar(db.agendamentos[0].dados.status === 'cancelado', 'status do agendamento virou cancelado no banco');
 
   // Dedup: reenviar a MESMA msgId não deve reprocessar (deve responder null)
