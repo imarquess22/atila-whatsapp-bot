@@ -224,6 +224,16 @@ async function enviar(bodyStr) {
   const sessaoAposManual = db.whatsapp_sessions.find(s => s.id === phone)?.dados;
   checar(sessaoAposManual?.humanTakeover === true, 'enviar mensagem manual mantém/ativa o modo atendimento humano');
 
+  // 12) "menu" precisa tirar do modo atendimento humano DE VERDADE (não só por uma mensagem)
+  // Nesse ponto a sessão está com humanTakeover=true (por causa dos passos 10 e 11 acima).
+  let antes = graphCalls.length;
+  await enviar(payloadTexto(phone, 'm10', 'menu'));
+  checar(graphCalls.length === antes + 1, '"menu" responde mesmo com atendimento humano ativo');
+
+  antes = graphCalls.length;
+  await enviar(payloadTexto(phone, 'm11', '1'));
+  checar(graphCalls.length === antes + 1, 'mensagem seguinte ao "menu" NÃO fica em silêncio (regressão: humanTakeover precisa continuar desligado)');
+
   console.log(`\n${'='.repeat(50)}`);
   if (falhas === 0) console.log('✅ TODOS OS TESTES DE WEBHOOK PASSARAM');
   else console.log(`❌ ${falhas} teste(s) falharam`);
