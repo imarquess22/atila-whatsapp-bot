@@ -25,6 +25,9 @@ const db = {
   audit_log: [],
   whatsapp_sessions: [],
   mensagens_whatsapp: [],
+  config: [
+    { id: 'main', dados: { planos: [{ id: 'plano1', nome: 'Manicure Completa', valor: 50, duracaoMin: 45 }] }, created_at: new Date().toISOString() },
+  ],
 };
 
 const graphCalls = []; // registra tudo que "enviamos" pra Meta
@@ -127,13 +130,6 @@ function checar(condicao, mensagem) {
   else console.log(`✅ ${mensagem}`);
 }
 
-function dataFuturaBR(diasAFrente) {
-  const d = new Date();
-  d.setDate(d.getDate() + diasAFrente);
-  if (d.getDay() === 0) d.setDate(d.getDate() + 1);
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-}
-
 async function enviar(bodyStr) {
   const req = makeReq(bodyStr);
   const res = makeRes();
@@ -157,51 +153,57 @@ async function enviar(bodyStr) {
   checar(ultima.body.type === 'interactive' && ultima.body.interactive.type === 'list', 'menu principal é enviado como lista clicável');
   checar(ultima.body.interactive.action.sections[0].rows.length === 5, 'lista do menu principal tem as 5 opções');
 
-  // 3) Escolhe "1" digitando texto -> lista de profissionais (LIST)
+  // 3) Escolhe "1" (agendar) -> só tem 1 profissional ativo, pula direto pra escolha de procedimento (LIST)
   res = await enviar(payloadTexto(phone, 'm3', '1'));
   ultima = graphCalls[graphCalls.length - 1];
-  checar(ultima.body.interactive?.type === 'list', 'lista de profissionais também é clicável');
-  checar(ultima.body.interactive.action.sections[0].rows.some(r => r.title === 'Maria Teste'), 'Maria Teste aparece na lista');
+  checar(ultima.body.interactive?.type === 'list', 'lista de procedimentos é clicável');
+  checar(ultima.body.interactive.action.sections[0].rows.some(r => r.title === 'Manicure Completa'), 'Manicure Completa aparece na lista de procedimentos');
 
-  // 4) Escolhe profissional clicando (interactive list_reply id "1") -> pede data (texto simples)
-  res = await enviar(payloadInterativo(phone, 'm4', 'list', '1', 'Maria Teste'));
+  // 4) Escolhe o procedimento clicando (list_reply id "1") -> pergunta o mês (BUTTONS)
+  res = await enviar(payloadInterativo(phone, 'm4', 'list', '1', 'Manicure Completa'));
   ultima = graphCalls[graphCalls.length - 1];
-  checar(ultima.body.type === 'text' && ultima.body.text.body.includes('DD/MM/AAAA'), 'resposta ao clique interativo funciona igual a digitar (pede data)');
+  checar(ultima.body.interactive?.type === 'button' && ultima.body.interactive.action.buttons.length === 3, 'pergunta do mês vem como 3 botões (este mês / mês que vem / voltar)');
 
-  // 5) Digita a data -> lista de horários (LIST)
-  const dataAgendar = dataFuturaBR(10);
-  res = await enviar(payloadTexto(phone, 'm5', dataAgendar));
+  // 5) Escolhe "este mês" (botão id "1") -> lista de dias com horário livre (LIST)
+  res = await enviar(payloadInterativo(phone, 'm5', 'button', '1', ultima.body.interactive.action.buttons[0].reply.title));
   ultima = graphCalls[graphCalls.length - 1];
-  checar(ultima.body.interactive?.type === 'list', 'lista de horários livres é clicável');
+  checar(ultima.body.interactive?.type === 'list', 'lista de dias com horário livre é clicável');
+  const primeiroDiaTitulo = ultima.body.interactive.action.sections[0].rows[0].title;
 
-  // 6) Clica no primeiro horário (interactive) -> confirmação (BUTTONS)
-  res = await enviar(payloadInterativo(phone, 'm6', 'list', '1', '07:00'));
+  // 6) Clica no primeiro dia -> lista de horários livres daquele dia (LIST), já considerando a duração do procedimento (45min)
+  res = await enviar(payloadInterativo(phone, 'm6', 'list', '1', primeiroDiaTitulo));
+  ultima = graphCalls[graphCalls.length - 1];
+  checar(ultima.body.interactive?.type === 'list', 'lista de horários livres do dia escolhido é clicável');
+
+  // 7) Clica no primeiro horário -> confirmação (BUTTONS), mostrando o procedimento escolhido
+  res = await enviar(payloadInterativo(phone, 'm7', 'list', '1', '07:00'));
   ultima = graphCalls[graphCalls.length - 1];
   checar(ultima.body.interactive?.type === 'button', 'confirmação do agendamento vem como botões');
   checar(ultima.body.interactive.action.buttons.length === 2, 'tem 2 botões (confirmar/cancelar)');
+  checar(ultima.body.interactive.body.text.includes('Manicure Completa'), 'confirmação mostra o nome do procedimento');
 
-  // 7) Clica em confirmar (botão id "1") -> agendamento criado + menu (LIST)
-  res = await enviar(payloadInterativo(phone, 'm7', 'button', '1', '✅ Confirmar'));
+  // 8) Clica em confirmar (botão id "1") -> agendamento criado + menu (LIST)
+  res = await enviar(payloadInterativo(phone, 'm8', 'button', '1', '✅ Confirmar'));
   ultima = graphCalls[graphCalls.length - 1];
   checar(ultima.body.interactive?.type === 'list', 'depois de confirmar, volta o menu principal clicável');
   checar(db.agendamentos.length === 1, 'agendamento foi realmente criado no banco');
+  checar(db.agendamentos[0].dados.duracao === 45, 'agendamento criado com a duração do procedimento (45min)');
 
-  // 8) Confere o histórico de mensagens
-  checar(db.mensagens_whatsapp.length >= 14, `histórico tem mensagens registradas (recebidas+enviadas) — total: ${db.mensagens_whatsapp.length}`);
+  // 9) Confere o histórico de mensagens (8 recebidas + 8 enviadas até aqui)
   const recebidas = db.mensagens_whatsapp.filter(m => m.dados.direcao === 'recebida');
   const enviadas = db.mensagens_whatsapp.filter(m => m.dados.direcao === 'enviada');
-  checar(recebidas.length === 7, `7 mensagens recebidas registradas (veio: ${recebidas.length})`);
-  checar(enviadas.length === 7, `7 mensagens enviadas registradas (veio: ${enviadas.length})`);
-  checar(recebidas.some(m => m.dados.texto === 'Maria Teste'), 'histórico mostra o título clicado ("Maria Teste"), não só o id "1"');
+  checar(recebidas.length === 8, `8 mensagens recebidas registradas (veio: ${recebidas.length})`);
+  checar(enviadas.length === 8, `8 mensagens enviadas registradas (veio: ${enviadas.length})`);
+  checar(recebidas.some(m => m.dados.texto === 'Manicure Completa'), 'histórico mostra o título clicado ("Manicure Completa"), não só o id "1"');
 
-  // 9) Assinatura inválida deve ser recusada com 401
-  const reqRuim = makeReq(payloadTexto(phone, 'm8', 'oi'));
+  // 10) Assinatura inválida deve ser recusada com 401
+  const reqRuim = makeReq(payloadTexto(phone, 'm-invalida', 'oi'));
   reqRuim.headers['x-hub-signature-256'] = 'sha256=0000000000000000000000000000000000000000000000000000000000000000';
   const resRuim = makeRes();
   await webhookHandler(reqRuim, resRuim);
   checar(resRuim._status === 401, 'assinatura inválida é recusada com 401');
 
-  // 10) Pedir atendente ("5") dispara aviso automático pro telefone do estúdio
+  // 11) Pedir atendente ("5") dispara aviso automático pro telefone do estúdio
   const chamadasAntes = graphCalls.length;
   res = await enviar(payloadTexto(phone, 'm9', '5'));
   const chamadasNovas = graphCalls.slice(chamadasAntes);

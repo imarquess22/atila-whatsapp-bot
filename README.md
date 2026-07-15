@@ -12,6 +12,12 @@ Também inclui: menus/confirmações como **listas e botões clicáveis** (não 
 **histórico de mensagens** (visível na página "Mensagens WhatsApp" do `index.html`), e um fluxo de
 **"falar com atendente"** com aviso automático + resposta manual pelo app (veja seção 6).
 
+**Fluxo de agendamento** (opção 1 do menu): profissional (pulado automaticamente se só houver 1
+ativo) → procedimento (cadastrado em Configurações → Planos Disponíveis, cada um com sua duração
+em minutos) → mês (este mês / mês que vem) → dia (só aparecem dias com horário livre, com
+paginação) → horário (já calculado considerando a duração do procedimento escolhido) → confirmação.
+Remarcar segue o mesmo mês → dia → horário, mantendo o profissional/duração do agendamento original.
+
 ---
 
 ## 1. Criar o app na Meta for Developers
@@ -147,7 +153,9 @@ https://SEU-PROJETO.vercel.app/api/admin-reset?phone=5511999999999&secret=SEU_AD
 
 - Bot de menu fixo — a cliente responde com números ou clicando em listas/botões, não é
   entendimento de texto livre por IA.
-- Duração do atendimento sempre 60min em agendamentos novos (igual ao padrão do app);
-  remarcações preservam a duração original.
+- Duração do agendamento vem do procedimento escolhido (Planos Disponíveis); sem procedimentos
+  cadastrados, usa 60min padrão. Remarcações preservam a duração original.
+- Listas clicáveis do WhatsApp aceitam no máximo 10 linhas — profissionais e procedimentos são
+  cortados nesse limite (sem paginação, ao contrário da lista de dias, que já pagina).
 - Sem lembrete automático de atraso ainda (isso é o botão manual 📲 que já existe no app) — dá
   para integrar depois reaproveitando `lib/meta.js`.

@@ -1,4 +1,4 @@
-// Casos extremos: domingo bloqueado, feriado cadastrado, conflito de horário, opção inválida no menu.
+// Casos extremos: domingo/feriado excluídos da lista de dias, conflito de horário, opção inválida no menu.
 'use strict';
 
 process.env.SUPABASE_URL = 'https://fake.supabase.local';
@@ -17,6 +17,7 @@ const db = {
   ],
   audit_log: [],
   whatsapp_sessions: [],
+  config: [{ id: 'main', dados: { planos: [] }, created_at: new Date().toISOString() }],
 };
 
 function fakeFetch(url, options = {}) {
@@ -64,35 +65,27 @@ function checar(condicao, mensagem) {
   else console.log(`✅ ${mensagem}`);
 }
 
-function proximoDomingoBR() {
-  const d = new Date();
-  d.setDate(d.getDate() + ((7 - d.getDay()) % 7 || 7));
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-}
-
 (async () => {
   const phone = '5511999999999';
 
-  // 1) Domingo deve ser recusado durante a escolha de data
-  let r = await handleIncoming({ from: phone, msgId: 'e1', text: '1' }); // menu -> agendar
-  r = await handleIncoming({ from: phone, msgId: 'e2', text: '1' }); // escolhe profissional
-  r = await handleIncoming({ from: phone, msgId: 'e3', text: proximoDomingoBR() });
-  checar(r.includes('Domingo'), 'domingo é recusado com a mensagem correta');
+  // 1) Domingos nunca entram na lista de dias com disponibilidade
+  const hoje = new Date();
+  const dias1 = await agenda.diasComDisponibilidade('p1', hoje.getFullYear(), hoje.getMonth() + 1, 60);
+  const temDomingo = dias1.some(d => new Date(d + 'T12:00:00').getDay() === 0);
+  checar(!temDomingo, 'nenhum domingo aparece na lista de dias disponíveis do mês atual');
+  checar(dias1.length > 0, 'mês atual tem pelo menos um dia disponível (sanity check)');
 
-  // volta ao menu e testa feriado cadastrado (25/12 do próximo ano em que ainda não passou)
-  await handleIncoming({ from: phone, msgId: 'e4', text: 'menu' });
-  await handleIncoming({ from: phone, msgId: 'e5', text: '1' });
-  await handleIncoming({ from: phone, msgId: 'e6', text: '1' });
-  const anoNatal = new Date().getMonth() === 11 && new Date().getDate() > 25 ? new Date().getFullYear() + 1 : new Date().getFullYear();
-  r = await handleIncoming({ from: phone, msgId: 'e7', text: `25/12/${anoNatal}` });
-  checar(r.includes('Natal'), 'feriado cadastrado (Natal) é recusado');
+  // 2) Feriado cadastrado (25/12) não aparece na lista de dezembro
+  const anoNatal = hoje.getMonth() === 11 && hoje.getDate() > 25 ? hoje.getFullYear() + 1 : hoje.getFullYear();
+  const diasDezembro = await agenda.diasComDisponibilidade('p1', anoNatal, 12, 60);
+  checar(!diasDezembro.includes(`${anoNatal}-12-25`), 'feriado cadastrado (Natal) não aparece na lista de dias de dezembro');
 
-  // 2) Opção inválida no menu principal
-  await handleIncoming({ from: phone, msgId: 'e8', text: 'menu' });
-  r = await handleIncoming({ from: phone, msgId: 'e9', text: '9' });
+  // 3) Opção inválida no menu principal
+  let r = await handleIncoming({ from: phone, msgId: 'e1', text: 'menu' });
+  r = await handleIncoming({ from: phone, msgId: 'e2', text: '9' });
   checar(r.includes('não entendi'), 'opção inválida no menu mostra "não entendi"');
 
-  // 3) Conflito de horário direto na camada de agendamentos (sem passar pelo menu)
+  // 4) Conflito de horário direto na camada de agendamentos (sem passar pelo menu)
   const dataTeste = (() => {
     const d = new Date(); d.setDate(d.getDate() + 15);
     if (d.getDay() === 0) d.setDate(d.getDate() + 1);
@@ -106,6 +99,25 @@ function proximoDomingoBR() {
 
   const semConflito = await agenda.criar({ clienteId: 'c1', profissionalId: 'p1', data: dataTeste, hora: '11:00', duracao: 60 });
   checar(semConflito.ok, 'terceiro agendamento (11:00, sem sobreposição) é criado normalmente');
+
+  // 6) Listas clicáveis do WhatsApp aceitam no máximo 10 linhas — um dia totalmente livre tem até
+  // 29 horários possíveis (07:00–21:00 de 30 em 30), então listaSlots() precisa cortar e ainda
+  // sobrar espaço pra linha "Voltar ao menu".
+  const menus = require('../lib/menus');
+  const diaTotalmenteLivre = (() => {
+    const d = new Date(); d.setDate(d.getDate() + 20);
+    if (d.getDay() === 0) d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  })();
+  const { slots: slotsDoDia } = await agenda.slotsDisponiveis('p1', diaTotalmenteLivre, 60);
+  checar(slotsDoDia.length <= 9, `slotsDisponiveis já limita a 9 horários por página (veio: ${slotsDoDia.length})`);
+  const menuSlots = menus.listaSlots(slotsDoDia, diaTotalmenteLivre);
+  checar(menuSlots.interactive.linhas.length <= 10, `lista de horários (com "Voltar") não passa de 10 linhas (veio: ${menuSlots.interactive.linhas.length})`);
+
+  // 5) Sem procedimentos cadastrados, o fluxo de agendar não trava — pula direto pro mês
+  r = await handleIncoming({ from: phone, msgId: 'e3', text: 'menu' });
+  r = await handleIncoming({ from: phone, msgId: 'e4', text: '1' }); // agendar (1 profissional, 0 procedimentos)
+  checar(r.includes('Para qual mês'), 'sem procedimentos cadastrados, pula direto pra escolha de mês (usa duração padrão)');
 
   console.log(`\n${'='.repeat(50)}`);
   if (falhas === 0) console.log('✅ TODOS OS TESTES DE CASOS EXTREMOS PASSARAM');
