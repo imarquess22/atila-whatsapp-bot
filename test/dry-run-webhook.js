@@ -147,11 +147,20 @@ async function enviar(bodyStr) {
   let ultima = graphCalls[graphCalls.length - 1];
   checar(ultima.body.type === 'text' && ultima.body.text.body.includes('nome completo'), 'pede nome via texto simples (sem interactive)');
 
-  // 2) Envia o nome -> cadastro + menu principal (deve vir como LIST)
+  // 2) Envia o nome -> pede data de nascimento (texto simples, sem interactive)
   res = await enviar(payloadTexto(phone, 'm2', 'Joana Cliente'));
+  ultima = graphCalls[graphCalls.length - 1];
+  checar(ultima.body.type === 'text' && ultima.body.text.body.includes('data de nascimento'), 'pede data de nascimento depois do nome');
+  checar(db.clientes.length === 0, 'cliente ainda não foi criado (falta a data de nascimento)');
+
+  // 2b) Envia a data de nascimento -> cadastro concluído + menu principal (deve vir como LIST, com a
+  // mensagem de boas-vindas de verdade no corpo, não só no fallback de texto)
+  res = await enviar(payloadTexto(phone, 'm2b', '10/05/1995'));
   ultima = graphCalls[graphCalls.length - 1];
   checar(ultima.body.type === 'interactive' && ultima.body.interactive.type === 'list', 'menu principal é enviado como lista clicável');
   checar(ultima.body.interactive.action.sections[0].rows.length === 5, 'lista do menu principal tem as 5 opções');
+  checar(ultima.body.interactive.body.text.includes('Cadastro feito'), 'a confirmação de cadastro aparece de verdade no corpo da lista (não só no fallback de texto)');
+  checar(db.clientes.length === 1 && db.clientes[0].dados.nascimento === '1995-05-10', 'cliente criado com a data de nascimento certa');
 
   // 3) Escolhe "1" (agendar) -> só tem 1 profissional ativo, pula direto pra escolha de procedimento (LIST)
   res = await enviar(payloadTexto(phone, 'm3', '1'));
@@ -174,9 +183,24 @@ async function enviar(bodyStr) {
   res = await enviar(payloadInterativo(phone, 'm6', 'list', '1', primeiroDiaTitulo));
   ultima = graphCalls[graphCalls.length - 1];
   checar(ultima.body.interactive?.type === 'list', 'lista de horários livres do dia escolhido é clicável');
+  checar(ultima.body.interactive.action.sections[0].rows.length <= 10, 'página de horários não passa de 10 linhas');
 
-  // 7) Clica no primeiro horário -> confirmação (BUTTONS), mostrando o procedimento escolhido
-  res = await enviar(payloadInterativo(phone, 'm7', 'list', '1', '07:00'));
+  // Se o dia escolhido (o primeiro disponível) ainda tiver mais de 8 horários livres — o normal,
+  // exceto se for hoje e já estiver no fim do expediente — a linha "Mais horários" (id "9")
+  // aparece; clica nela pra testar a paginação de verdade. Teste unitário mais exaustivo desse
+  // cálculo (independente do horário em que o teste roda) está em dry-run-edge.js.
+  const temMaisHorarios = ultima.body.interactive.action.sections[0].rows.some(r => r.id === '9');
+  if (temMaisHorarios) {
+    res = await enviar(payloadInterativo(phone, 'm6b', 'list', '9', '➡️ Mais horários'));
+    ultima = graphCalls[graphCalls.length - 1];
+    checar(ultima.body.interactive?.type === 'list', 'clicar em "Mais horários" mostra a próxima página de horários');
+    checar(ultima.body.interactive.action.sections[0].rows.length <= 10, 'segunda página de horários também não passa de 10 linhas');
+  } else {
+    console.log('  (dia escolhido já não tinha mais de 8 horários livres — pulando teste de clique em "Mais horários")');
+  }
+
+  // 7) Clica no primeiro horário da página atual -> confirmação (BUTTONS), mostrando o procedimento escolhido
+  res = await enviar(payloadInterativo(phone, 'm7', 'list', '1', ultima.body.interactive.action.sections[0].rows[0].title));
   ultima = graphCalls[graphCalls.length - 1];
   checar(ultima.body.interactive?.type === 'button', 'confirmação do agendamento vem como botões');
   checar(ultima.body.interactive.action.buttons.length === 2, 'tem 2 botões (confirmar/cancelar)');
@@ -186,14 +210,16 @@ async function enviar(bodyStr) {
   res = await enviar(payloadInterativo(phone, 'm8', 'button', '1', '✅ Confirmar'));
   ultima = graphCalls[graphCalls.length - 1];
   checar(ultima.body.interactive?.type === 'list', 'depois de confirmar, volta o menu principal clicável');
+  checar(ultima.body.interactive.body.text.includes('agendado'), 'mensagem de "agendamento confirmado" aparece de verdade no corpo (não só no fallback)');
   checar(db.agendamentos.length === 1, 'agendamento foi realmente criado no banco');
   checar(db.agendamentos[0].dados.duracao === 45, 'agendamento criado com a duração do procedimento (45min)');
 
-  // 9) Confere o histórico de mensagens (8 recebidas + 8 enviadas até aqui)
+  // 9) Confere o histórico de mensagens (8 + 1 a mais se o clique em "Mais horários" aconteceu)
+  const esperado = temMaisHorarios ? 10 : 9;
   const recebidas = db.mensagens_whatsapp.filter(m => m.dados.direcao === 'recebida');
   const enviadas = db.mensagens_whatsapp.filter(m => m.dados.direcao === 'enviada');
-  checar(recebidas.length === 8, `8 mensagens recebidas registradas (veio: ${recebidas.length})`);
-  checar(enviadas.length === 8, `8 mensagens enviadas registradas (veio: ${enviadas.length})`);
+  checar(recebidas.length === esperado, `${esperado} mensagens recebidas registradas (veio: ${recebidas.length})`);
+  checar(enviadas.length === esperado, `${esperado} mensagens enviadas registradas (veio: ${enviadas.length})`);
   checar(recebidas.some(m => m.dados.texto === 'Manicure Completa'), 'histórico mostra o título clicado ("Manicure Completa"), não só o id "1"');
 
   // 10) Assinatura inválida deve ser recusada com 401

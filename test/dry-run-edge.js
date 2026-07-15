@@ -100,19 +100,25 @@ function checar(condicao, mensagem) {
   const semConflito = await agenda.criar({ clienteId: 'c1', profissionalId: 'p1', data: dataTeste, hora: '11:00', duracao: 60 });
   checar(semConflito.ok, 'terceiro agendamento (11:00, sem sobreposição) é criado normalmente');
 
-  // 6) Listas clicáveis do WhatsApp aceitam no máximo 10 linhas — um dia totalmente livre tem até
-  // 29 horários possíveis (07:00–21:00 de 30 em 30), então listaSlots() precisa cortar e ainda
-  // sobrar espaço pra linha "Voltar ao menu".
+  // 6) slotsDisponiveis() retorna a lista COMPLETA (sem cortar) — quem pagina é o flow.js.
+  // Um dia totalmente livre tem até 29 horários possíveis (07:00–21:00 de 30 em 30).
   const menus = require('../lib/menus');
+  const { HORARIOS_POR_PAGINA } = require('../lib/constants');
   const diaTotalmenteLivre = (() => {
     const d = new Date(); d.setDate(d.getDate() + 20);
     if (d.getDay() === 0) d.setDate(d.getDate() + 1);
     return d.toISOString().split('T')[0];
   })();
   const { slots: slotsDoDia } = await agenda.slotsDisponiveis('p1', diaTotalmenteLivre, 60);
-  checar(slotsDoDia.length <= 9, `slotsDisponiveis já limita a 9 horários por página (veio: ${slotsDoDia.length})`);
-  const menuSlots = menus.listaSlots(slotsDoDia, diaTotalmenteLivre);
-  checar(menuSlots.interactive.linhas.length <= 10, `lista de horários (com "Voltar") não passa de 10 linhas (veio: ${menuSlots.interactive.linhas.length})`);
+  checar(slotsDoDia.length > HORARIOS_POR_PAGINA, `dia totalmente livre tem mais horários do que cabe numa página (veio: ${slotsDoDia.length})`);
+
+  // Listas clicáveis do WhatsApp aceitam no máximo 10 linhas — a página que o flow.js monta
+  // (horários + "Mais horários" + "Voltar") nunca pode passar disso.
+  const pagina = slotsDoDia.slice(0, HORARIOS_POR_PAGINA);
+  const temMais = slotsDoDia.length > HORARIOS_POR_PAGINA;
+  const menuSlots = menus.listaSlots(pagina, diaTotalmenteLivre, temMais);
+  checar(temMais && menuSlots.interactive.linhas.some(l => l.id === '9'), 'página de horários mostra a linha "Mais horários" quando há mais do que cabe');
+  checar(menuSlots.interactive.linhas.length <= 10, `página de horários (com "Mais horários" + "Voltar") não passa de 10 linhas (veio: ${menuSlots.interactive.linhas.length})`);
 
   // 5) Sem procedimentos cadastrados, o fluxo de agendar não trava — pula direto pro mês
   r = await handleIncoming({ from: phone, msgId: 'e3', text: 'menu' });

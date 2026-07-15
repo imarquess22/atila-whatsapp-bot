@@ -80,8 +80,13 @@ async function enviar(from, msgId, text) {
   checar(r.texto.includes('nome completo'), 'cliente desconhecida recebe pedido de cadastro');
 
   r = await enviar(phone, 'm2', 'Joana Cliente');
+  checar(r.texto.includes('data de nascimento'), 'depois do nome, pede a data de nascimento');
+  checar(db.clientes.length === 0, 'cliente ainda não foi criado (falta a data de nascimento)');
+
+  r = await enviar(phone, 'm2b', '10/05/1995');
   checar(r.texto.includes('Joana Cliente') && r.texto.includes('Como posso ajudar'), 'cadastro automático + menu principal');
   checar(db.clientes.length === 1, 'cliente foi criado no banco');
+  checar(db.clientes[0].dados.nascimento === '1995-05-10', 'data de nascimento foi salva corretamente');
 
   // Só há 1 profissional ativo -> a escolha de profissional é pulada, vai direto pro procedimento.
   r = await enviar(phone, 'm3', '1');
