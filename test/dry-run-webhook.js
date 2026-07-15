@@ -12,6 +12,8 @@ process.env.META_APP_SECRET = FAKE_APP_SECRET;
 process.env.META_ACCESS_TOKEN = 'fake-access-token';
 process.env.META_PHONE_NUMBER_ID = 'fake-phone-number-id';
 process.env.META_VERIFY_TOKEN = 'fake-verify-token';
+process.env.STUDIO_NOTIFICACAO_TELEFONE = '5511900000000';
+process.env.PAINEL_WHATSAPP_SECRET = 'fake-painel-secret';
 
 const db = {
   profissionais: [
@@ -67,6 +69,7 @@ function fakeFetch(url, options = {}) {
 globalThis.fetch = fakeFetch;
 
 const webhookHandler = require('../api/webhook.js');
+const enviarManualHandler = require('../api/enviar-manual.js');
 
 function assinar(bodyStr) {
   return 'sha256=' + crypto.createHmac('sha256', FAKE_APP_SECRET).update(bodyStr).digest('hex');
@@ -82,10 +85,12 @@ function makeReq(bodyStr) {
 
 function makeRes() {
   return {
-    _status: null, _body: null,
+    _status: null, _body: null, _headers: {},
     status(code) { this._status = code; return this; },
     end(body) { this._body = body; return this; },
     send(body) { this._body = body; return this; },
+    json(body) { this._body = body; return this; },
+    setHeader(k, v) { this._headers[k] = v; return this; },
   };
 }
 
@@ -195,6 +200,29 @@ async function enviar(bodyStr) {
   const resRuim = makeRes();
   await webhookHandler(reqRuim, resRuim);
   checar(resRuim._status === 401, 'assinatura inválida é recusada com 401');
+
+  // 10) Pedir atendente ("5") dispara aviso automático pro telefone do estúdio
+  const chamadasAntes = graphCalls.length;
+  res = await enviar(payloadTexto(phone, 'm9', '5'));
+  const chamadasNovas = graphCalls.slice(chamadasAntes);
+  checar(chamadasNovas.length === 2, 'pedir atendente gera 2 envios (resposta pra cliente + aviso pro estúdio)');
+  checar(chamadasNovas[0]?.body.to === phone, 'cliente recebe a mensagem de "atendente acionado"');
+  checar(chamadasNovas[1]?.body.to === '5511900000000' && chamadasNovas[1].body.text.body.includes('Joana Cliente'), 'estúdio recebe aviso com o nome da cliente');
+
+  // 11) Endpoint /api/enviar-manual (resposta manual pela telinha do app)
+  function makeJsonReq(body) { return { method: 'POST', body, headers: { 'content-type': 'application/json' } }; }
+
+  const resManualSemSecret = makeRes();
+  await enviarManualHandler(makeJsonReq({ telefone: phone, texto: 'oi', secret: 'errado' }), resManualSemSecret);
+  checar(resManualSemSecret._status === 401, 'enviar-manual recusa secret errado');
+
+  const resManualOk = makeRes();
+  await enviarManualHandler(makeJsonReq({ telefone: phone, texto: 'Oi Joana, aqui é a Maria!', secret: 'fake-painel-secret' }), resManualOk);
+  checar(resManualOk._status === 200, 'enviar-manual aceita secret correto');
+  const ultimaManual = graphCalls[graphCalls.length - 1];
+  checar(ultimaManual.body.type === 'text' && ultimaManual.body.text.body === 'Oi Joana, aqui é a Maria!', 'mensagem manual foi enviada via Graph API');
+  const sessaoAposManual = db.whatsapp_sessions.find(s => s.id === phone)?.dados;
+  checar(sessaoAposManual?.humanTakeover === true, 'enviar mensagem manual mantém/ativa o modo atendimento humano');
 
   console.log(`\n${'='.repeat(50)}`);
   if (falhas === 0) console.log('✅ TODOS OS TESTES DE WEBHOOK PASSARAM');

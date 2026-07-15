@@ -8,6 +8,10 @@ automaticamente no app quando você abrir no navegador.
 Sem dependências externas (só `fetch`/`crypto` nativos do Node 18+), sem servidor para manter
 no ar: roda em funções serverless da Vercel.
 
+Também inclui: menus/confirmações como **listas e botões clicáveis** (não só números digitados),
+**histórico de mensagens** (visível na página "Mensagens WhatsApp" do `index.html`), e um fluxo de
+**"falar com atendente"** com aviso automático + resposta manual pelo app (veja seção 6).
+
 ---
 
 ## 1. Criar o app na Meta for Developers
@@ -45,7 +49,7 @@ no ar: roda em funções serverless da Vercel.
 1. Crie um repositório novo no GitHub só com o conteúdo desta pasta `whatsapp-bot/` (pode ser
    privado).
 2. Em https://vercel.com → **Add New... → Project** → importe esse repositório.
-3. Antes de publicar, vá em **Environment Variables** e adicione todas as 7 variáveis abaixo
+3. Antes de publicar, vá em **Environment Variables** e adicione todas as variáveis abaixo
    (veja `.env.example` para a lista com descrição de onde pegar cada uma):
 
    | Variável | Valor |
@@ -54,9 +58,11 @@ no ar: roda em funções serverless da Vercel.
    | `META_PHONE_NUMBER_ID` | do passo 1.4 |
    | `META_VERIFY_TOKEN` | invente uma senha qualquer, ex: `atila-verify-2026` |
    | `META_APP_SECRET` | do passo 1.6 |
-   | `SUPABASE_URL` | `https://aenwwcqzchwflzpbzpwc.supabase.co` |
+   | `SUPABASE_URL` | `https://qtxglcprcuwucukablar.supabase.co` |
    | `SUPABASE_SERVICE_KEY` | do passo 2.3 |
    | `ADMIN_SECRET` | invente outra senha, ex: `atila-admin-2026` |
+   | `PAINEL_WHATSAPP_SECRET` | precisa ser IGUAL à constante `WA_PAINEL_SECRET` no `index.html` |
+   | `STUDIO_NOTIFICACAO_TELEFONE` | telefone (DDI+DDD+número, só dígitos) que recebe o aviso de "pediu atendente" |
 
 4. Clique em **Deploy**. Ao terminar, copie a URL pública, ex: `https://atila-bot.vercel.app`.
 
@@ -117,20 +123,30 @@ Percorra o fluxo inteiro por texto: menu → agendar → ver → remarcar → ca
   recusado.
 - Mande a mesma mensagem duas vezes (`curl` com o mesmo `"id"`) → não deve duplicar o agendamento.
 
-## 6. "Falar com atendente" — devolvendo a conversa pro bot
+## 6. "Falar com atendente" — como funciona de ponta a ponta
 
-Quando uma cliente escolhe a opção **5 (Falar com atendente)**, o bot fica em silêncio para aquele
-número por 1h (retomando sozinho depois disso), ou você pode devolver na hora abrindo no navegador:
+Quando uma cliente escolhe a opção **5 (Falar com atendente)**:
 
+1. O bot manda uma mensagem avisando e **fica em silêncio** para aquele número por 1h (retoma
+   sozinho depois disso, ou a cliente pode digitar **"menu"** a qualquer momento para voltar).
+2. Se `STUDIO_NOTIFICACAO_TELEFONE` estiver configurado, o bot manda **automaticamente** um aviso
+   por WhatsApp pra esse número, com o nome e telefone da cliente.
+3. Quem for responder abre a página **"Mensagens WhatsApp"** no `index.html`, vê a conversa, e usa
+   o campo **"Responder manualmente"** pra mandar a resposta — ela sai pelo mesmo número do bot
+   (via `POST /api/enviar-manual`, protegido pela `PAINEL_WHATSAPP_SECRET`) e fica registrada no
+   histórico como uma mensagem normal.
+4. Enviar uma resposta manual também renova o prazo de silêncio do bot (mais 1h), pra ele não
+   voltar a responder no meio de uma conversa humana em andamento.
+
+Devolver a conversa pro bot na força, sem esperar a 1h:
 ```
 https://SEU-PROJETO.vercel.app/api/admin-reset?phone=5511999999999&secret=SEU_ADMIN_SECRET
 ```
 
-A cliente também pode digitar **"menu"** a qualquer momento para voltar ao assistente automático.
-
 ## Limitações conhecidas (por design, para manter simples)
 
-- Bot de menu fixo — a cliente responde com números, não é entendimento de texto livre por IA.
+- Bot de menu fixo — a cliente responde com números ou clicando em listas/botões, não é
+  entendimento de texto livre por IA.
 - Duração do atendimento sempre 60min em agendamentos novos (igual ao padrão do app);
   remarcações preservam a duração original.
 - Sem lembrete automático de atraso ainda (isso é o botão manual 📲 que já existe no app) — dá

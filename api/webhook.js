@@ -17,6 +17,19 @@ async function enviarResposta(to, resposta) {
   }
 }
 
+// Avisa o estúdio (via WhatsApp, no mesmo número do bot) quando uma cliente pede atendente humano.
+async function notificarEstudioAtendente({ nome, telefone }) {
+  const destino = process.env.STUDIO_NOTIFICACAO_TELEFONE;
+  if (!destino) return; // não configurado — sem aviso, sem erro
+  try {
+    const aviso = `🔔 *${nome}* (${telefone}) pediu atendimento humano no bot do WhatsApp.\n\nResponda pela tela "Mensagens WhatsApp" no app.`;
+    await sendText(destino, aviso);
+    await registrarMensagem(destino, 'enviada', aviso);
+  } catch (e) {
+    console.error('Erro ao notificar estúdio sobre pedido de atendente:', e);
+  }
+}
+
 // Desliga o parser automático de corpo da Vercel — precisamos dos bytes BRUTOS
 // da requisição para conferir a assinatura HMAC antes de confiar no conteúdo.
 module.exports.config = { api: { bodyParser: false } };
@@ -76,6 +89,7 @@ module.exports = async function handler(req, res) {
       await registrarMensagem(incoming.from, 'recebida', incoming.textoExibicao ?? incoming.text ?? `(mensagem do tipo ${incoming.tipo})`);
       const resposta = await handleIncoming(incoming);
       if (resposta) await enviarResposta(incoming.from, resposta);
+      if (resposta?.notificarEstudio) await notificarEstudioAtendente(resposta.notificarEstudio);
     }
     // `incoming === null` normalmente é um callback de status/entrega — não há nada a processar.
   } catch (e) {
