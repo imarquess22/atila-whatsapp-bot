@@ -125,6 +125,27 @@ function checar(condicao, mensagem) {
   r = await handleIncoming({ from: phone, msgId: 'e4', text: '1' }); // agendar (1 profissional, 0 procedimentos)
   checar(r.includes('Para qual mês'), 'sem procedimentos cadastrados, pula direto pra escolha de mês (usa duração padrão)');
 
+  // 7) Cliente/agendamento excluídos no portal (tombstone, _deleted:'*') não podem continuar
+  // "vivos" pro bot — nem no cadastro, nem ocupando horário na agenda.
+  const phoneExcluido = '5511988887777';
+  db.clientes.push({ id: 'c-excluido', dados: { id: 'c-excluido', nome: 'Cliente Excluído', tel: phoneExcluido, status: 'ativo', _deleted: '*' }, created_at: new Date().toISOString() });
+  const clienteAchado = await require('../lib/clientes').findClienteByPhone(phoneExcluido);
+  checar(clienteAchado === null, 'cliente excluído no portal (tombstone) não é encontrado por telefone');
+
+  r = await handleIncoming({ from: phoneExcluido, msgId: 'e5', text: 'oi' });
+  checar(r.includes('nome completo'), 'número de um cliente excluído é tratado como cliente novo (pede cadastro de novo)');
+
+  const dataTeste2 = (() => {
+    const d = new Date(); d.setDate(d.getDate() + 16);
+    if (d.getDay() === 0) d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  })();
+  db.agendamentos.push({ id: 'ag-excluido', dados: { id: 'ag-excluido', clienteId: 'c1', profissionalId: 'p1', data: dataTeste2, hora: '09:00', duracao: 60, status: 'agendado', _deleted: '*' }, created_at: new Date().toISOString() });
+  const agendamentosVisiveis = await agenda.fetchTodosAgendamentos();
+  checar(!agendamentosVisiveis.some(a => a.id === 'ag-excluido'), 'agendamento excluído no portal (tombstone) não aparece em fetchTodosAgendamentos');
+  const conflitoComExcluido = await agenda.criar({ clienteId: 'c1', profissionalId: 'p1', data: dataTeste2, hora: '09:00', duracao: 60 });
+  checar(conflitoComExcluido.ok, 'horário de um agendamento excluído volta a ficar disponível (não bloqueia mais a agenda)');
+
   console.log(`\n${'='.repeat(50)}`);
   if (falhas === 0) console.log('✅ TODOS OS TESTES DE CASOS EXTREMOS PASSARAM');
   else console.log(`❌ ${falhas} teste(s) falharam`);
