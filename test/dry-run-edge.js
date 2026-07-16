@@ -146,6 +146,17 @@ function checar(condicao, mensagem) {
   const conflitoComExcluido = await agenda.criar({ clienteId: 'c1', profissionalId: 'p1', data: dataTeste2, hora: '09:00', duracao: 60 });
   checar(conflitoComExcluido.ok, 'horário de um agendamento excluído volta a ficar disponível (não bloqueia mais a agenda)');
 
+  // 8) Agendamento de HOJE cujo horário já passou não pode continuar aparecendo como "futuro" —
+  // senão o bot oferece remarcar/cancelar um horário que já aconteceu.
+  const { hojeSP, horaAgoraSP, toMin } = require('../lib/util');
+  const hojeStr = hojeSP();
+  const minAgora = toMin(horaAgoraSP());
+  const minPassado = Math.max(0, minAgora - 10);
+  const horaPassada = `${String(Math.floor(minPassado / 60)).padStart(2, '0')}:${String(minPassado % 60).padStart(2, '0')}`;
+  db.agendamentos.push({ id: 'ag-hoje-passado', dados: { id: 'ag-hoje-passado', clienteId: 'c1', profissionalId: 'p1', data: hojeStr, hora: horaPassada, duracao: 60, status: 'agendado' }, created_at: new Date().toISOString() });
+  const futurosHoje = await agenda.listarFuturos('c1');
+  checar(!futurosHoje.some(a => a.id === 'ag-hoje-passado'), 'agendamento de hoje com horário já passado não aparece mais como "futuro" (bot não oferece mais remarcar/cancelar)');
+
   console.log(`\n${'='.repeat(50)}`);
   if (falhas === 0) console.log('✅ TODOS OS TESTES DE CASOS EXTREMOS PASSARAM');
   else console.log(`❌ ${falhas} teste(s) falharam`);
