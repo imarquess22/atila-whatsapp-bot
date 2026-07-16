@@ -1,5 +1,5 @@
 const { verifySignature, readRawBody } = require('../lib/verifySignature');
-const { parseIncoming, sendText, sendButtons, sendList } = require('../lib/meta');
+const { parseIncoming, sendText, sendButtons, sendList, baixarMedia } = require('../lib/meta');
 const { handleIncoming } = require('../lib/flow');
 const { registrarMensagem } = require('../lib/historico');
 
@@ -86,7 +86,17 @@ module.exports = async function handler(req, res) {
   try {
     const incoming = parseIncoming(payload);
     if (incoming) {
-      await registrarMensagem(incoming.from, 'recebida', incoming.textoExibicao ?? incoming.text ?? `(mensagem do tipo ${incoming.tipo})`);
+      // Mensagem de voz: baixa o áudio e guarda junto no histórico, pra atendente ouvir no portal.
+      let extraHistorico = {};
+      if (incoming.tipo === 'audio' && incoming.mediaId) {
+        try {
+          const { base64, mime } = await baixarMedia(incoming.mediaId);
+          extraHistorico = { audioBase64: base64, audioMime: mime };
+        } catch (e) {
+          console.error('Erro ao baixar áudio recebido:', e);
+        }
+      }
+      await registrarMensagem(incoming.from, 'recebida', incoming.textoExibicao ?? incoming.text ?? `(mensagem do tipo ${incoming.tipo})`, extraHistorico);
       const resposta = await handleIncoming(incoming);
       if (resposta) await enviarResposta(incoming.from, resposta);
       if (resposta?.notificarEstudio) await notificarEstudioAtendente(resposta.notificarEstudio);

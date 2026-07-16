@@ -149,6 +149,29 @@ Devolver a conversa pro bot na força, sem esperar a 1h:
 https://SEU-PROJETO.vercel.app/api/admin-reset?phone=5511999999999&secret=SEU_ADMIN_SECRET
 ```
 
+Também dá pra encerrar pelo próprio portal (botão **"✅ Encerrar atendimento"** na conversa ou na
+janelinha flutuante) — chama `POST /api/encerrar-atendimento` (`{telefone, secret}`, com a
+`PAINEL_WHATSAPP_SECRET`), que devolve a conversa pro bot **e avisa a cliente** do encerramento.
+
+## 7. Outros endpoints usados pelo portal
+
+Todos protegidos pela `PAINEL_WHATSAPP_SECRET`, com CORS liberado (chamados via `fetch` do navegador):
+
+- `POST /api/enviar-manual` — `{telefone, texto, secret}`: resposta manual de texto.
+- `POST /api/enviar-audio` — `{telefone, audioBase64, mime, secret}`: sobe o áudio gravado no
+  portal pra Meta e envia como mensagem de voz (limite 5MB; a Cloud API só aceita
+  aac/mp3/mp4/amr/ogg-opus — se o navegador gravar em outro formato, a Meta recusa e o portal
+  mostra o erro).
+- `POST /api/encerrar-atendimento` — `{telefone, secret}`: encerra o modo atendente humano.
+- `POST /api/lembretes` — `{secret}`: processa lembretes de atendimento (config no portal:
+  "⏰ Lembrete de Atendimento"). Idempotente — cada agendamento recebe no máximo 1 lembrete
+  (marcado em `dados.lembreteEnviado`). O portal chama a cada 5 min enquanto aberto; se quiser
+  lembretes mesmo com o portal fechado, aponte um cron externo (ex: cron-job.org) pra esse
+  endpoint.
+
+Áudios recebidos das clientes são baixados da Meta e gravados em base64 no próprio registro de
+`mensagens_whatsapp` (`dados.audioBase64`/`audioMime`) — o portal mostra um player na conversa.
+
 ## Limitações conhecidas (por design, para manter simples)
 
 - Bot de menu fixo — a cliente responde com números ou clicando em listas/botões, não é
