@@ -157,6 +157,54 @@ function checar(condicao, mensagem) {
   const futurosHoje = await agenda.listarFuturos('c1');
   checar(!futurosHoje.some(a => a.id === 'ag-hoje-passado'), 'agendamento de hoje com horário já passado não aparece mais como "futuro" (bot não oferece mais remarcar/cancelar)');
 
+  // 9) "0" na tela de horários deve voltar pra escolha de DIA (não pro menu principal) — antes
+  // disso resetava o fluxo inteiro, obrigando a cliente a escolher profissional/procedimento/mês de
+  // novo só pra tentar outro dia. Continua a sessão do teste 5 (que parou em "Para qual mês").
+  r = await handleIncoming({ from: phone, msgId: 'e6', text: '1' }); // escolhe o mês (1 = atual)
+  checar(r.includes('Dias com horário livre'), 'depois de escolher o mês, mostra a lista de dias');
+  r = await handleIncoming({ from: phone, msgId: 'e7', text: '1' }); // escolhe o primeiro dia disponível
+  checar(r.includes('Horários livres'), 'depois de escolher o dia, mostra a lista de horários');
+  r = await handleIncoming({ from: phone, msgId: 'e8', text: '0' }); // "voltar" a partir da tela de horários
+  checar(r.includes('Dias com horário livre') && !r.includes('Como posso ajudar'), '"0" na tela de horários volta pra escolha de dia, não pro menu principal');
+  r = await handleIncoming({ from: phone, msgId: 'e9', text: '0' }); // "voltar" a partir da tela de dias (comportamento não deve mudar)
+  checar(r.includes('Como posso ajudar'), '"0" na tela de dias continua voltando pro menu principal (não alterado)');
+
+  // 10) Opção "6" do menu principal mostra a tabela de preços vinda do cadastro de procedimentos
+  // (Configurações → Planos Disponíveis no portal), buscada ao vivo.
+  db.config[0].dados.planos = [{ id: 'proc1', nome: 'Manicure', valor: 35, duracaoMin: 45 }];
+  r = await handleIncoming({ from: phone, msgId: 'e10', text: '6' });
+  checar(r.includes('Tabela de preços') && r.includes('Manicure') && r.includes('35,00'), 'opção 6 do menu mostra a tabela de preços com os procedimentos cadastrados');
+  checar(r.includes('Como posso ajudar'), 'depois da tabela de preços, o menu principal aparece de novo em seguida');
+
+  // 11) Horário de Atendimento (Calendário → config.horarioInicio/horarioFim): restringe só os
+  // horários oferecidos ao bot pra escolha da cliente. Não deve impedir um agendamento manual
+  // (agenda.criar direto, como o portal faz) fora dessa janela.
+  const diaHorarioTeste = (() => {
+    const d = new Date(); d.setDate(d.getDate() + 25);
+    if (d.getDay() === 0) d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  })();
+  db.config[0].dados.horarioInicio = '09:00';
+  db.config[0].dados.horarioFim = '17:00';
+  const { slots: slotsRestritos } = await agenda.slotsDisponiveis('p1', diaHorarioTeste, 60);
+  checar(slotsRestritos.length > 0, 'com horário de atendimento configurado, ainda há horários livres dentro da janela');
+  checar(slotsRestritos.every(h => h >= '09:00' && h < '17:00'), `slotsDisponiveis só oferece horários dentro de 09:00–17:00 (veio: ${slotsRestritos[0]}..${slotsRestritos[slotsRestritos.length - 1]})`);
+  checar(!slotsRestritos.includes('07:00') && !slotsRestritos.includes('19:00'), 'horários fora da janela configurada (07:00, 19:00) não aparecem pro bot');
+
+  const agendamentoManualForaDaJanela = await agenda.criar({ clienteId: 'c1', profissionalId: 'p1', data: diaHorarioTeste, hora: '19:00', duracao: 60 });
+  checar(agendamentoManualForaDaJanela.ok, 'agendamento manual (agenda.criar) fora da janela configurada continua sendo permitido — a restrição é só na oferta ao bot');
+
+  // Sem horário configurado, volta a oferecer a grade cheia (comportamento padrão preservado).
+  delete db.config[0].dados.horarioInicio;
+  delete db.config[0].dados.horarioFim;
+  const diaSemRestricao = (() => {
+    const d = new Date(); d.setDate(d.getDate() + 26);
+    if (d.getDay() === 0) d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  })();
+  const { slots: slotsSemRestricao } = await agenda.slotsDisponiveis('p1', diaSemRestricao, 60);
+  checar(slotsSemRestricao.includes('07:00') && slotsSemRestricao.includes('20:30'), 'sem horário de atendimento configurado, a grade cheia (07:00–21:00) continua disponível');
+
   console.log(`\n${'='.repeat(50)}`);
   if (falhas === 0) console.log('✅ TODOS OS TESTES DE CASOS EXTREMOS PASSARAM');
   else console.log(`❌ ${falhas} teste(s) falharam`);

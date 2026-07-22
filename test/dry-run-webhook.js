@@ -158,7 +158,7 @@ async function enviar(bodyStr) {
   res = await enviar(payloadTexto(phone, 'm2b', '10/05/1995'));
   ultima = graphCalls[graphCalls.length - 1];
   checar(ultima.body.type === 'interactive' && ultima.body.interactive.type === 'list', 'menu principal é enviado como lista clicável');
-  checar(ultima.body.interactive.action.sections[0].rows.length === 5, 'lista do menu principal tem as 5 opções');
+  checar(ultima.body.interactive.action.sections[0].rows.length === 6, 'lista do menu principal tem as 6 opções (inclui Tabela de preços)');
   checar(ultima.body.interactive.body.text.includes('Cadastro feito'), 'a confirmação de cadastro aparece de verdade no corpo da lista (não só no fallback de texto)');
   checar(db.clientes.length === 1 && db.clientes[0].dados.nascimento === '1995-05-10', 'cliente criado com a data de nascimento certa');
 
